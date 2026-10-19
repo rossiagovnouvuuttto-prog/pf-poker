@@ -1,3 +1,3 @@
 # PF poker
 
-Android-приложение для тренировочной игры в Texas Hold’em на виртуальные фишки.
+Android-приложение с офлайн-тренировкой Texas Hold’em. Сборка APK доступна в GitHub Actions.
