@@ -1,0 +1,69 @@
+name: PF Poker Backend Checks
+on:
+  push:
+    branches: [pf-poker-android]
+    paths:
+      - 'pf-server/**'
+      - 'Dockerfile'
+      - 'railway.json'
+      - '.github/workflows/verify-pf-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  engine-and-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pf
+          POSTGRES_PASSWORD: pf_ci_only
+          POSTGRES_DB: pf_poker
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U pf -d pf_poker"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://pf:pf_ci_only@localhost:5432/pf_poker?schema=public
+      JWT_SECRET: ci_only_64_chars_not_for_production_0123456789abcdefghijklmnopqrstuvwxyz
+      CORS_ORIGIN: '*'
+      PORT: '3000'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Extract server sources
+        run: |
+          mkdir -p "$RUNNER_TEMP/pf-backend"
+          base64 -d pf-server/server-src.tar.gz.base64 | tar -xz -C "$RUNNER_TEMP/pf-backend"
+      - name: Install
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: npm install --no-audit --no-fund
+      - name: Test poker rules
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: npm run test:engine
+      - name: Build NestJS and Prisma
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: npm run build
+      - name: Create PostgreSQL schema
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: npm run db:push -w @pf/api
+      - name: Start API
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: |
+          npm run start -w @pf/api > "$RUNNER_TEMP/pf-api.log" 2>&1 &
+          for i in {1..40}; do
+            if curl -fsS http://localhost:3000/health; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/pf-api.log"
+          exit 1
+      - name: Two-player REST and Socket.IO smoke test
+        working-directory: ${{ runner.temp }}/pf-backend
+        run: npm run test:smoke
