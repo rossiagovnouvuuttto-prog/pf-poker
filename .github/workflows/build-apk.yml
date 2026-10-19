@@ -1,0 +1,49 @@
+name: Build PF poker APK
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Check mobile interface
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+          node .github/qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PF-poker-UI-check
+          path: ui-check/
+      - name: Build installable debug APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify APK signature and package
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk
+      - name: Name APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk PF-poker.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PF-poker-APK
+          path: PF-poker.apk
+          if-no-files-found: error
