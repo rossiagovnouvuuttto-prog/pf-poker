@@ -17,6 +17,7 @@ jobs:
     env:
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_API_URL: 'https://pf-poker-api-production.up.railway.app'
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -40,6 +41,42 @@ jobs:
           base64 -d pf-mobile/mobile-build-bundle.base64 | tar -xz -C "$RUNNER_TEMP/pf-poker-app"
           test -f "$RUNNER_TEMP/pf-poker-app/App.tsx"
           test -f "$RUNNER_TEMP/pf-poker-app/package.json"
+      - name: Configure live Railway backend (PF Poker 0.1.1)
+        working-directory: ${{ runner.temp }}/pf-poker-app
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          let app = fs.readFileSync('App.tsx', 'utf8');
+          function patch(before, after) {
+            if (!app.includes(before)) throw new Error('Mobile source changed: missing expected text');
+            app = app.replace(before, after);
+          }
+          const base = 'https://pf-poker-api-production.up.railway.app';
+          patch("let API=process.env.EXPO_PUBLIC_API_URL||'https://pf-poker.example.invalid';",
+                "const DEFAULT_API='" + base + "';\nlet API=process.env.EXPO_PUBLIC_API_URL||DEFAULT_API;");
+          patch("const host=await SecureStore.getItemAsync('pf_api');if(host){API=host;setServer(host);}const key=await SecureStore.getItemAsync('pf_token');",
+                "const host=await SecureStore.getItemAsync('pf_api');" +
+                "const migrated=await SecureStore.getItemAsync('pf_api_v011_migrated');" +
+                "if(!migrated){API=DEFAULT_API;setServer(DEFAULT_API);" +
+                "await SecureStore.setItemAsync('pf_api',DEFAULT_API);" +
+                "await SecureStore.setItemAsync('pf_api_v011_migrated','yes');" +
+                "if(host&&host!==DEFAULT_API)await SecureStore.deleteItemAsync('pf_token');" +
+                "}else if(host){API=host;setServer(host);}" +
+                "const key=await SecureStore.getItemAsync('pf_token');");
+          patch('PLAY MONEY ONLY · NO CASH VALUE</Text>', 'PF POKER v0.1.1 · PLAY MONEY ONLY</Text>');
+          if (app.includes('pf-poker.example.invalid')) throw new Error('Old unreachable host still in application');
+          fs.writeFileSync('App.tsx', app);
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = '0.1.1';
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          const config = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          config.expo.version = '0.1.1';
+          config.expo.android.versionCode = 2;
+          fs.writeFileSync('app.json', JSON.stringify(config, null, 2) + '\n');
+          console.log('PF Poker 0.1.1 configured with live HTTPS Railway API');
+          NODE
+      - name: Verify Railway API is live
+        run: curl --fail --retry 3 -sS https://pf-poker-api-production.up.railway.app/health
       - name: Install Expo dependencies
         working-directory: ${{ runner.temp }}/pf-poker-app
         run: npm install --legacy-peer-deps --no-audit --no-fund
@@ -55,7 +92,7 @@ jobs:
       - name: Save Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: PF-Poker-Android-APK
+          name: PF-Poker-Android-0.1.1-APK
           path: ${{ runner.temp }}/pf-poker-app/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
