@@ -24,6 +24,16 @@ jobs:
           gradle-version: '8.13'
       - name: Install SDK
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Check mobile interface
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+          node .github/qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PF-poker-UI-check
+          path: ui-check/
       - name: Build installable debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Verify APK signature and package
