@@ -51,6 +51,8 @@ jobs:
       - name: Build NestJS and Prisma
         working-directory: ${{ runner.temp }}/pf-backend
         run: npm run build
+      - name: Validate Railway Docker build
+        run: docker build -t pf-poker-backend:ci .
       - name: Create PostgreSQL schema
         working-directory: ${{ runner.temp }}/pf-backend
         run: npm run db:push -w @pf/api
